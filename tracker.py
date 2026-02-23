@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Claude Code Cost Tracker
-Modes: pre | post | stop | inline | report
+Modes: pre | post | stop | report
 Called by native hooks in ~/.claude/settings.json
 """
 
@@ -45,11 +45,14 @@ def load_pricing():
 
 def price_for(model, models_dict, aliases_dict=None):
     aliases_dict = aliases_dict or {}
+    # Try direct match first
     if model in models_dict:
         return models_dict[model]
+    # Try alias lookup
     resolved = aliases_dict.get(model)
     if resolved and resolved in models_dict:
         return models_dict[resolved]
+    # Try stripping date suffix: "claude-sonnet-4-5-20250929" → try shorter prefixes
     parts = (model or "").split("-")
     for end in range(len(parts), 2, -1):
         candidate = "-".join(parts[:end])
@@ -222,12 +225,14 @@ def analyse(events, pricing_models, pricing_aliases, context_cap, jsonl_path=Non
         time_by_category[p["category"]] += p["elapsed_s"]
     total_timed = sum(time_by_category.values()) or 1
 
+    # File read counts (for report display)
     file_map = {}
     for p in paired:
         if p["tool"] == "Read" and p["file_path"]:
             fp = p["file_path"]
             file_map.setdefault(fp, {"reads": 0})["reads"] += 1
 
+    # Bash command frequency
     bash_commands = collections.Counter()
     for p in paired:
         if p["tool"] == "Bash" and p["command"]:
@@ -262,6 +267,7 @@ def analyse(events, pricing_models, pricing_aliases, context_cap, jsonl_path=Non
         api_calls_count = real_usage["api_calls"]
 
     else:
+        # Fallback: estimation (unchanged logic)
         model   = next((e.get("model") for e in events if e.get("model")), "claude-sonnet-4-6")
         pricing = price_for(model, pricing_models, pricing_aliases)
         input_price  = pricing["input"]  / 1_000_000
@@ -371,12 +377,14 @@ def format_full_report(data):
     w     = len(header)
     lines = ["╔" + "═" * w + "╗", "║" + header + "║", "╚" + "═" * w + "╝", ""]
 
+    # Time breakdown
     lines += ["  Time breakdown", "  " + "─" * 57]
     for cat, t in sorted(d["time_by_category"].items(), key=lambda x: -x[1]):
         frac = t / d["total_timed"]
         lines.append(f"  {cat:<28}  {fmt_duration(t):>7}  {bar(frac):12}  {int(frac * 100)}%")
     lines.append("")
 
+    # Cost breakdown — real token table or estimated fallback
     lines += ["  Cost breakdown", "  " + "─" * 57]
     if d.get("using_real_data"):
         pricing  = d["pricing"]
@@ -403,6 +411,7 @@ def format_full_report(data):
             f"  API calls: {d['api_calls']}   Cache saved you: ${saved:.4f} vs all-input pricing",
             "",
         ]
+        # File read counts (no per-file cost since total is now real)
         file_map = d.get("file_map", {})
         if file_map:
             lines += [
@@ -420,6 +429,7 @@ def format_full_report(data):
             "",
         ]
 
+    # Context growth
     tl = d["context_timeline"]
     if len(tl) >= 2:
         lines += [
@@ -430,6 +440,7 @@ def format_full_report(data):
             "",
         ]
 
+    # Suggestions
     lines += ["  3 things worth changing", "  " + "─" * 57]
     for i, s in enumerate(d["suggestions"], 1):
         lines.append(f"  {i}. {s}")
@@ -511,7 +522,15 @@ def mode_stop():
     claude_jsonl                        = find_claude_session_jsonl(session_id)
     data                                = analyse(events, pricing_models, pricing_aliases, context_cap, jsonl_path=claude_jsonl)
 
-    print(json.dumps({"systemMessage": format_short_summary(data)}), flush=True)
+    summary = format_short_summary(data)
+    if summary:
+        # Save for display at start of next response
+        ensure_dirs()
+        last_cost_file = SESSIONS_DIR / "last-cost.txt"
+        last_cost_file.write_text(summary)
+        print(json.dumps({"systemMessage": summary}), flush=True)
+    else:
+        print("{}", flush=True)
 
     if not events:
         return
@@ -536,6 +555,24 @@ def mode_stop():
             "using_real_data":  data.get("using_real_data", False),
             "archive":          str(archive_path),
         }) + "\n")
+
+
+def mode_prompt_inject():
+    """Called by UserPromptSubmit hook. Injects last task's cost box as a start-of-response requirement."""
+    last_cost_file = SESSIONS_DIR / "last-cost.txt"
+    if last_cost_file.exists():
+        cost_box = last_cost_file.read_text().strip()
+        last_cost_file.unlink()  # Consume — show once only
+        if cost_box:
+            msg = (
+                "MANDATORY: The FIRST thing you output in your response MUST be this exact "
+                "cost box (verbatim, before any other text). Copy it exactly:\n\n"
+                + cost_box + "\n\n"
+                "After outputting the cost box, continue with your normal response."
+            )
+            print(json.dumps({"systemMessage": msg}), flush=True)
+            return
+    print("{}", flush=True)
 
 
 def mode_inline():
@@ -607,6 +644,8 @@ if __name__ == "__main__":
             mode_stop()
         elif mode == "inline":
             mode_inline()
+        elif mode == "prompt-inject":
+            mode_prompt_inject()
         elif mode == "report":
             mode_report(sys.argv[2] if len(sys.argv) > 2 else None)
         else:
