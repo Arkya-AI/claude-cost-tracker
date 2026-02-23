@@ -1,0 +1,31 @@
+{
+  "default_model": "claude-sonnet-4-6",
+  "models": {
+    "claude-sonnet-4-6": {
+      "input": 3.00,
+      "output": 15.00,
+      "cache_creation": 3.75,
+      "cache_read": 0.30
+    },
+    "claude-opus-4-6": {
+      "input": 15.00,
+      "output": 75.00,
+      "cache_creation": 18.75,
+      "cache_read": 1.50
+    },
+    "claude-haiku-4-5": {
+      "input": 0.80,
+      "output": 4.00,
+      "cache_creation": 1.00,
+      "cache_read": 0.08
+    }
+  },
+  "model_aliases": {
+    "claude-opus-4-5-20251101":   "claude-opus-4-6",
+    "claude-sonnet-4-5-20250929": "claude-sonnet-4-6",
+    "claude-haiku-4-5-20250929":  "claude-haiku-4-5",
+    "claude-haiku-4-5-20251001":  "claude-haiku-4-5"
+  },
+  "context_window_cap_tokens": 200000,
+  "_note": "Prices per million tokens. cache_creation = prompt cache write. cache_read = prompt cache read (10x cheaper than input). Edit to update."
+}
