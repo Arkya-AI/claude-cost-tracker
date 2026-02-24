@@ -509,28 +509,38 @@ def mode_post():
     print("{}", flush=True)
 
 
-def mode_stop():
-    import shutil, datetime
+def cost_box_already_shown(jsonl_path):
+    """Check if Claude's last response already contains the cost box text."""
+    if not jsonl_path or not jsonl_path.exists():
+        return False
     try:
-        payload = json.load(sys.stdin)
+        with open(jsonl_path) as f:
+            lines = f.readlines()
+        for line in reversed(lines[-30:]):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                d = json.loads(line)
+                if d.get("type") == "assistant":
+                    content = d.get("message", {}).get("content", [])
+                    text = " ".join(
+                        item.get("text", "") if isinstance(item, dict) else ""
+                        for item in (content if isinstance(content, list) else [])
+                    )
+                    return "\u2713 Done \u00b7" in text  # "✓ Done ·"
+            except (json.JSONDecodeError, KeyError):
+                continue
     except Exception:
-        payload = {}
+        pass
+    return False
 
-    session_id                          = payload.get("session_id", "unknown")
-    events                              = read_events(session_id)
-    pricing_models, pricing_aliases, context_cap = load_pricing()
-    claude_jsonl                        = find_claude_session_jsonl(session_id)
-    data                                = analyse(events, pricing_models, pricing_aliases, context_cap, jsonl_path=claude_jsonl)
 
-    summary = format_short_summary(data)
-    if summary:
-        # Print to stderr — appears in the terminal right after Claude's response
-        print(summary, file=sys.stderr, flush=True)
-    print("{}", flush=True)
-
+def _archive_session(session_id, events, data):
+    """Archive tracker events and write to history. Called once after cost box is shown."""
+    import shutil, datetime
     if not events:
         return
-
     ensure_dirs()
     ts_str       = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     archive_path = SESSIONS_DIR / f"{ts_str}.jsonl"
@@ -538,19 +548,49 @@ def mode_stop():
     if src.exists():
         shutil.copy2(str(src), str(archive_path))
         src.unlink()
-
     with open(HISTORY_FILE, "a") as f:
         f.write(json.dumps({
-            "date":             datetime.datetime.now().isoformat(),
-            "session_id":       session_id,
-            "duration_ms":      int(data.get("duration_s", 0) * 1000),
-            "total_cost":       round(data.get("total_cost", 0), 6),
-            "peak_tokens":      data.get("peak_tokens", 0),
-            "tool_calls":       data.get("tool_calls", 0),
-            "api_calls":        data.get("api_calls", 0),
-            "using_real_data":  data.get("using_real_data", False),
-            "archive":          str(archive_path),
+            "date":            datetime.datetime.now().isoformat(),
+            "session_id":      session_id,
+            "duration_ms":     int(data.get("duration_s", 0) * 1000),
+            "total_cost":      round(data.get("total_cost", 0), 6),
+            "peak_tokens":     data.get("peak_tokens", 0),
+            "tool_calls":      data.get("tool_calls", 0),
+            "api_calls":       data.get("api_calls", 0),
+            "using_real_data": data.get("using_real_data", False),
+            "archive":         str(archive_path),
         }) + "\n")
+
+
+def mode_stop():
+    try:
+        payload = json.load(sys.stdin)
+    except Exception:
+        payload = {}
+
+    session_id   = payload.get("session_id", "unknown")
+    events       = read_events(session_id)
+    pricing_models, pricing_aliases, context_cap = load_pricing()
+    claude_jsonl = find_claude_session_jsonl(session_id)
+    data         = analyse(events, pricing_models, pricing_aliases, context_cap, jsonl_path=claude_jsonl)
+    summary      = format_short_summary(data)
+
+    if summary:
+        if cost_box_already_shown(claude_jsonl):
+            # Claude just output the cost box — archive and allow stopping
+            _archive_session(session_id, events, data)
+            print("{}", flush=True)
+        else:
+            # Block stop: force Claude to output the cost box as a visible chat response
+            instruction = (
+                "Output ONLY the following lines as your complete response. "
+                "No introduction, no explanation, no other text:\n\n" + summary
+            )
+            print(json.dumps({"decision": "block", "reason": instruction}), flush=True)
+    else:
+        # No cost data — archive and stop normally
+        _archive_session(session_id, events, data)
+        print("{}", flush=True)
 
 
 def mode_prompt_inject():
