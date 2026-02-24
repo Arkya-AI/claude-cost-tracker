@@ -575,21 +575,13 @@ def mode_stop():
     data         = analyse(events, pricing_models, pricing_aliases, context_cap, jsonl_path=claude_jsonl)
     summary      = format_short_summary(data)
 
-    if summary:
-        if cost_box_already_shown(claude_jsonl):
-            # Claude just output the cost box — archive and allow stopping
-            _archive_session(session_id, events, data)
-            print("{}", flush=True)
-        else:
-            # Block stop: force Claude to output the cost box as a visible chat response
-            instruction = (
-                "Output ONLY the following lines as your complete response. "
-                "No introduction, no explanation, no other text:\n\n" + summary
-            )
-            print(json.dumps({"decision": "block", "reason": instruction}), flush=True)
+    # Always archive tracker events (idempotent — safe if already done)
+    _archive_session(session_id, events, data)
+
+    if summary and not cost_box_already_shown(claude_jsonl):
+        # Show cost box as Stop hook feedback — visible in the chat window
+        print(json.dumps({"decision": "block", "reason": summary}), flush=True)
     else:
-        # No cost data — archive and stop normally
-        _archive_session(session_id, events, data)
         print("{}", flush=True)
 
 
