@@ -74,21 +74,6 @@ if not has_hook(stop, "tracker.py stop"):
         "timeout": 15
     })
 
-# UserPromptSubmit — mandatory inline cost display
-ups = hooks.setdefault("UserPromptSubmit", [{"hooks": []}])
-inline_cmd = (
-    f'''{python} -c "import json; print(json.dumps({{'systemMessage': '''
-    f''''COST DISPLAY — MANDATORY: At the very end of your response (after all content), '''
-    f'''you MUST run this command and include the output verbatim in your reply:\\\\n\\\\n'''
-    f'''  {python} {install_dir}/tracker.py inline\\\\n\\\\n'''
-    f'''No exceptions. Every response must end with this cost box.'}}))"'''
-)
-if not has_hook(ups, "tracker.py inline"):
-    ups[0]["hooks"].append({
-        "type": "command",
-        "command": inline_cmd,
-        "timeout": 5
-    })
 
 settings_path.write_text(json.dumps(data, indent=2))
 print("Hooks written to", settings_path)

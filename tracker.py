@@ -524,13 +524,9 @@ def mode_stop():
 
     summary = format_short_summary(data)
     if summary:
-        # Save for display at start of next response
-        ensure_dirs()
-        last_cost_file = SESSIONS_DIR / "last-cost.txt"
-        last_cost_file.write_text(summary)
-        print(json.dumps({"systemMessage": summary}), flush=True)
-    else:
-        print("{}", flush=True)
+        # Print to stderr — appears in the terminal right after Claude's response
+        print(summary, file=sys.stderr, flush=True)
+    print("{}", flush=True)
 
     if not events:
         return
