@@ -528,7 +528,9 @@ def cost_box_already_shown(jsonl_path):
                         item.get("text", "") if isinstance(item, dict) else ""
                         for item in (content if isinstance(content, list) else [])
                     )
-                    return "\u2713 Done \u00b7" in text  # "✓ Done ·"
+                    # Only match if the response IS the cost box (short, <400 chars).
+                    # A longer response that merely mentions "✓ Done ·" is not the box.
+                    return len(text) < 400 and "\u2713 Done \u00b7" in text
             except (json.JSONDecodeError, KeyError):
                 continue
     except Exception:
