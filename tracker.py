@@ -579,8 +579,12 @@ def mode_stop():
     _archive_session(session_id, events, data)
 
     if summary and not cost_box_already_shown(claude_jsonl):
-        # Show cost box as Stop hook feedback — visible in the chat window
-        print(json.dumps({"decision": "block", "reason": summary}), flush=True)
+        instruction = (
+            "Your COMPLETE response must be ONLY this exact text block — "
+            "no introduction, no explanation, no paraphrasing, no commentary:\n\n"
+            + summary
+        )
+        print(json.dumps({"decision": "block", "reason": instruction}), flush=True)
     else:
         print("{}", flush=True)
 
