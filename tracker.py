@@ -579,12 +579,15 @@ def mode_stop():
     _archive_session(session_id, events, data)
 
     if summary and not cost_box_already_shown(claude_jsonl):
-        instruction = (
-            "Your COMPLETE response must be ONLY this exact text block — "
-            "no introduction, no explanation, no paraphrasing, no commentary:\n\n"
-            + summary
-        )
-        print(json.dumps({"decision": "block", "reason": instruction}), flush=True)
+        print(json.dumps({
+            "decision": "block",
+            "reason": summary,
+            "systemMessage": (
+                "MANDATORY: Output ONLY the exact cost box from the stop hook reason "
+                "as your complete response. No introduction, no explanation, no "
+                "paraphrasing, no commentary. Just the box lines verbatim."
+            ),
+        }), flush=True)
     else:
         print("{}", flush=True)
 
